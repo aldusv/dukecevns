@@ -1,0 +1,35 @@
+{
+  "description": "CCM-style CsI unquenched CEvNS truth recoil baseline.",
+  "material": "CsI",
+  "mass_tons": 0.0146,
+  "exposure_seconds": 94608000.0,
+  "beam": {
+    "proton_energy_mev": 800.0,
+    "current_microamp": 100.0,
+    "pulse_width_ns": 290.0,
+    "pulse_rate_hz": 20.0,
+    "pot_total": 2.25e22,
+    "baseline_m": 23.0
+  },
+  "flux": {
+    "per_flavor_per_cm2_s": 176000.0,
+    "total_per_cm2_s": 528000.0,
+    "flavor_weights": {
+      "nue": 1.0,
+      "numu": 1.0,
+      "numubar": 1.0
+    }
+  },
+  "formfactor": {
+    "type": "helm",
+    "sval": 0.9,
+    "rfac": 1.0
+  },
+  "pdg_year": 2024,
+  "recoil_min_mev": 0.0,
+  "recoil_step_mev": 0.0001,
+  "neutrino_step_mev": 0.01,
+  "output_csv": "out/ccm_csi_truth_recoil_rates.csv",
+  "sampler_csv": "out/ccm_csi_recoil_sampler.csv",
+  "metadata_json": "out/ccm_csi_truth_recoil_rates.meta.json"
+}

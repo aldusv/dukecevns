@@ -4,8 +4,14 @@
 *.o
 *.a
 jsonfiles
+!jsonfiles/
+!jsonfiles/ccm_csi_truth.json
 sns_rates
+ccm_truth_rates
 get_flavor_weight.cc
 qf/*
 eff/*
 gs/*
+out/ccm_*_recoil_rates.csv
+out/ccm_*_recoil_rates.meta.json
+out/ccm_*_recoil_sampler.csv

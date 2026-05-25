@@ -121,6 +121,13 @@ If `qftype==poly`, the second row contains polynomial coefficients: C0, C1, C2, 
 Column one: Energy [MeVee]
 Column two: Number of events per MeVee
 
+## CCM truth recoil output
+
+Build `make ccm_truth_rates`, then run `./ccm_truth_rates ccm_csi_truth`.
+This writes unquenched CsI recoil spectra and a CCI sampler CSV using explicit
+columns: `rate_density_events_per_mev` and `expected_events_bin`. No QF,
+smearing, threshold, or detector efficiency is applied in this output.
+
 [JSON]: https://www.json.org/json-en.html
 [git]: https://git-scm.com/book/en/v2/Getting-Started-What-is-Git%3F
 [submodule]: https://git-scm.com/book/en/v2/Git-Tools-Submodules

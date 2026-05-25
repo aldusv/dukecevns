@@ -26,7 +26,7 @@ LIBNAME   = $(LIBALIAS)_$(VER)
 libdiffspec     = lib$(LIBNAME).a
 
 
-targets = $(libdiffspec) formfactors diff_rates reactor_diff_rates nufluxes maptest detresp
+targets = $(libdiffspec) formfactors diff_rates reactor_diff_rates nufluxes maptest detresp ccm_truth_rates
 
 
 $(libdiffspec) : $(OBJS)
@@ -107,6 +107,15 @@ sns_rates: sns_rates.o get_flavor_weight.o $(libdiffspec)
 .PHONY: sns_rates.o
 sns_rates.o: 
 	$(CXX) -o sns_rates.o $(ROOTCFLAGS) $(CXXFLAGS) -c sns_rates.cc
+
+ccm_truth_rates: ccm_truth_rates.o $(libdiffspec)
+	$(RM) $@
+	$(CXX) -o $@ $(CXXFLAGS) -L. $^
+
+
+.PHONY: ccm_truth_rates.o
+ccm_truth_rates.o:
+	$(CXX) -o ccm_truth_rates.o $(CXXFLAGS) -c ccm_truth_rates.cc
 
 nsi_rates: nsi_rates.o $(libdiffspec) 
 	$(RM) $@
