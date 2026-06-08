@@ -3,6 +3,7 @@
 *.out
 *.o
 *.a
+__pycache__/
 jsonfiles
 !jsonfiles/
 !jsonfiles/ccm_csi_truth.json
@@ -15,3 +16,8 @@ gs/*
 out/ccm_*_recoil_rates.csv
 out/ccm_*_recoil_rates.meta.json
 out/ccm_*_recoil_sampler.csv
+out/ccm_*_recoil_by_component.csv
+out/ccm_*_time_by_component.csv
+out/ccm_*_recoil_time_2d.csv
+out/ccm_*_nu_recoil_2d.csv
+out/plots/

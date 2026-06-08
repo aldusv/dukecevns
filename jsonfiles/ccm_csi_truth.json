@@ -1,29 +1,88 @@
 {
-  "description": "CCM-style CsI unquenched CEvNS truth recoil baseline.",
+  "bookkeeping": [
+    {
+      "name": "description",
+      "value": "CCM-style CsI unquenched CEvNS truth recoil baseline."
+    },
+    {
+      "name": "reference_flux",
+      "note": "Reference LAr-experiment flux retained for comparison only; source-yield normalization below is used for rates.",
+      "per_flavor_per_cm2_s": 176000.0,
+      "total_per_cm2_s": 528000.0
+    },
+    {
+      "name": "beam_reference",
+      "note": "Reference beam facts retained for provenance only.",
+      "proton_energy_mev": 800.0,
+      "current_microamp": 100.0
+    }
+  ],
   "material": "CsI",
-  "mass_tons": 0.0146,
+  "detector": {
+    "crystal_count": 16,
+    "crystal_mass_kg": 4.0,
+    "crystal_dimensions_in": [2.0, 2.0, 12.0]
+  },
   "exposure_seconds": 94608000.0,
   "beam": {
-    "proton_energy_mev": 800.0,
-    "current_microamp": 100.0,
+    "pulse_shape": "triangular",
     "pulse_width_ns": 290.0,
+    "pulse_peak_ns": 145.0,
     "pulse_rate_hz": 20.0,
-    "pot_total": 2.25e22,
     "baseline_m": 23.0
   },
-  "flux": {
-    "per_flavor_per_cm2_s": 176000.0,
-    "total_per_cm2_s": 528000.0,
-    "flavor_weights": {
-      "nue": 1.0,
-      "numu": 1.0,
-      "numubar": 1.0
+  "normalization": {
+    "mode": "source_yield",
+    "pot_per_second": 5.0e14,
+    "source_yield": {
+      "angular_model": "isotropic",
+      "stopped_piplus_per_pot": 0.099774
     }
+  },
+  "flux": {
+    "source_components": [
+      {
+        "name": "prompt_numu",
+        "flavor": "numu",
+        "yield_per_stopped_piplus": 1.0,
+        "time_profile": "beam_triangular_plus_exponential",
+        "decay_lifetime_ns": 26.03
+      },
+      {
+        "name": "delayed_nue",
+        "flavor": "nue",
+        "yield_per_stopped_piplus": 1.0,
+        "time_profile": "beam_triangular_plus_exponential",
+        "decay_lifetime_ns": 2196.9811
+      },
+      {
+        "name": "delayed_numubar",
+        "flavor": "numubar",
+        "yield_per_stopped_piplus": 1.0,
+        "time_profile": "beam_triangular_plus_exponential",
+        "decay_lifetime_ns": 2196.9811
+      }
+    ]
   },
   "formfactor": {
     "type": "helm",
     "sval": 0.9,
     "rfac": 1.0
+  },
+  "time_window": {
+    "start_ns": 0.0,
+    "end_ns": 10000.0,
+    "mode": "annotate_only"
+  },
+  "diagnostics": {
+    "time_min_ns": 0.0,
+    "time_max_ns": 10000.0,
+    "time_step_ns": 100.0,
+    "nu_energy_step_mev": 0.25,
+    "recoil_by_component_csv": "out/ccm_csi_recoil_by_component.csv",
+    "time_by_component_csv": "out/ccm_csi_time_by_component.csv",
+    "recoil_time_csv": "out/ccm_csi_recoil_time_2d.csv",
+    "nu_recoil_csv": "out/ccm_csi_nu_recoil_2d.csv"
   },
   "pdg_year": 2024,
   "recoil_min_mev": 0.0,
