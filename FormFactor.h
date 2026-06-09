@@ -1,107 +1,26 @@
-#ifndef _FormFactor_
-#define _FormFactor_
+#ifndef DUKECEVNS_FORMFACTOR_H
+#define DUKECEVNS_FORMFACTOR_H
 
-#include <map>
-#include <vector>
-#include <fstream>
-#include <math.h>
-#include <string>
+class FormFactor {
+ public:
+  virtual ~FormFactor() = default;
+  virtual double FFval(double momentumTransferFmInverse) const = 0;
 
-using namespace std;
-
-class FormFactor
-{
+  void SetA(int massNumber);
+  void SetRfac(double radiusScale);
 
  protected:
-
-  int A; 
-  int Z;
-  double Rfac = 1;
-
-  char fftype[80];
- 
-
- public: 
-  FormFactor();
-  FormFactor(const char *);
-  ~FormFactor(){};
-
-  virtual double FFval(double) = 0;
-
-  void SetA(int);
-  int GetA();
-
-  void SetZ(int);
-  int GetZ();
-
-  // Variation of Rn (as fraction of nominal)
-
-  void SetRfac(double);
-  double GetRfac();
-
-
-  void Setfftype(const char *);
-  const char * Getfftype();
-
+  int massNumber_ = 0;
+  double radiusScale_ = 1.0;
 };
 
-class UnityFF: public FormFactor {
-
-
+class Helm final : public FormFactor {
  public:
-  UnityFF() : FormFactor("unityff") {}
-  double FFval(double);
+  void Setsval(double skinThicknessFm);
+  double FFval(double momentumTransferFmInverse) const override;
 
-};
-
-class Helm: public FormFactor {
-
- protected:
-  double sval;
-
- public:
-  Helm() : FormFactor("helm") {}
-  double FFval(double);
-  void Setsval(double);
-  double Getsval(); 
-
-};
-
-
-class Klein: public FormFactor {
-
- protected:
-  double akval;
-  double skinfac=0;
-
- public:
-  Klein() : FormFactor("klein") {}
-  double FFval(double);
-  void Setakval(double);
-  double Getakval(); 
-
-  // Skin factor (zero for protons), used for some form factors
-
-  void Setskinfac(double);
-  double Getskinfac();
-
-};
-
-
-class Horowitz: public FormFactor {
-
- protected:
-  std::map<double,double> _ffmap;
-  char filename[80];
-
- public:
-  Horowitz() : FormFactor("horowitz") {}
-  double FFval(double);
-  void SetFFfilename(const char * filename);
-  const char * GetFFfilename();
-  void ReadFFfile();
-
-
+ private:
+  double skinThicknessFm_ = 0.9;
 };
 
 #endif
