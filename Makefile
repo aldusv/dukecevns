@@ -6,7 +6,7 @@ TARGET := ccm_truth_rates
 SOURCES := ccm_truth_rates.cc FormFactor.cc NuFlux.cc xscns.cc
 OBJECTS := $(SOURCES:.cc=.o)
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: $(TARGET)
 
@@ -18,3 +18,6 @@ $(TARGET): $(OBJECTS)
 
 clean:
 	$(RM) $(TARGET) $(OBJECTS)
+
+test: $(TARGET)
+	python3 test_ccm_truth_rates.py

@@ -42,8 +42,9 @@ mass fractions, molar masses, detector mass, and Avogadro's constant.
   acceptance without changing rates; `rate_windowed` applies the acceptance.
 - The baseline is 23 m. The `1/(4 pi R^2)` term gives flux density at that
   distance; no detector projected-area or orientation factor is applied.
-- The detector contains 16 stoichiometric CsI crystals at 4 kg each, for
-  0.064 tonnes total. Crystal dimensions are recorded but do not affect rates.
+- The detector contains 25 full-crystal equivalents at `2 x 2 x 12 in`.
+  DukeCEvNS calculates their mass from `4.51 g/cm3` CsI: `3.547471615 kg`
+  each and `0.088686790368` tonnes total.
 - Normalization uses `5.0e14 POT/s`, `0.099774 stopped pi+/POT`, and
   94,608,000 s exposure. The historical LAr flux is comparison metadata only.
 - Recoils are unquenched nuclear-recoil energies. QF, CsI[Na/Tl] light yield,

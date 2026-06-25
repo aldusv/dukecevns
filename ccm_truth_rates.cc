@@ -65,10 +65,39 @@ struct OutputPaths {
   std::string nuRecoilCsv;
 };
 
+struct DiagnosticsConfig {
+  double timeMinNs;
+  double timeMaxNs;
+  double timeStepNs;
+  double nuEnergyStepMeV;
+};
+
 struct TimeWindow {
   double startNs;
   double endNs;
   std::string mode;
+};
+
+struct RunSettings {
+  std::string configPath;
+  json config;
+  std::string material;
+  json detectorConfig;
+  double detectorMassTons;
+  double exposureSeconds;
+  double beamPulseWidthNs;
+  std::string beamPulseShape;
+  double beamPulsePeakNs;
+  double pulseRateHz;
+  double beamPeriodNs;
+  double recoilStepMeV;
+  double recoilMinMeV;
+  double recoilMaxOverrideMeV;
+  double neutrinoStepMeV;
+  int pdgYear;
+  TimeWindow timeWindow;
+  DiagnosticsConfig diagnostics;
+  OutputPaths paths;
 };
 
 struct Normalization {
@@ -104,7 +133,47 @@ struct OutputFiles {
   std::ofstream nuRecoilDiagnostic;
 };
 
+struct TruthRateRow {
+  std::string material;
+  Isotope isotope;
+  SourceComponent component;
+  double recoilEnergyMeV;
+  double recoilBinWidthMeV;
+  double timeWindowStartNs;
+  double timeWindowEndNs;
+  std::string timeWindowMode;
+  double timeAcceptance;
+  double exposureSeconds;
+  double dndeEventsPerMeV;
+  double expectedEventsBin;
+};
+
+struct SamplerRow {
+  int targetZ;
+  int targetA;
+  double recoilEnergyMeV;
+  double contributionEvents;
+  double recoilBinWidthMeV;
+  double meanNuEnergyMeV;
+  std::string source;
+  SourceComponent component;
+  double timeWindowStartNs;
+  double timeWindowEndNs;
+  std::string timeWindowMode;
+  double timeAcceptance;
+  double exposureSeconds;
+};
+
+struct RateProducts {
+  RateLedger ledger;
+  RecoilComponentEvents recoilEventsByComponent;
+  NuRecoilEvents nuRecoilEventsByComponent;
+  std::vector<TruthRateRow> truthRows;
+  std::vector<SamplerRow> samplerRows;
+};
+
 double RequiredDouble(const json& object, const char* key);
+OutputPaths ReadOutputPaths(const json& config);
 
 double ReadDetectorMassTons(const json& config)
 {
@@ -192,6 +261,55 @@ TimeWindow ReadTimeWindow(const json& config)
   };
 }
 
+DiagnosticsConfig ReadDiagnosticsConfig(const json& config)
+{
+  const json diagnostics = config.value("diagnostics", json::object());
+  DiagnosticsConfig result{
+    diagnostics.value("time_min_ns", 0.0),
+    diagnostics.value("time_max_ns", 10000.0),
+    diagnostics.value("time_step_ns", 100.0),
+    diagnostics.value("nu_energy_step_mev", 0.25),
+  };
+  if (result.timeMaxNs <= result.timeMinNs || result.timeStepNs <= 0.0) {
+    throw std::runtime_error(
+      "diagnostics requires time_max_ns > time_min_ns and time_step_ns > 0");
+  }
+  if (result.nuEnergyStepMeV <= 0.0) {
+    throw std::runtime_error("diagnostics.nu_energy_step_mev must be > 0");
+  }
+  return result;
+}
+
+RunSettings ReadRunSettings(const std::string& configPath)
+{
+  const json config = ReadJson(configPath);
+  const double beamPulseWidthNs = RequiredDouble(config.at("beam"), "pulse_width_ns");
+  const double pulseRateHz = RequiredDouble(config.at("beam"), "pulse_rate_hz");
+  const std::string beamPulseShape =
+    config.at("beam").value("pulse_shape", "uniform");
+  return {
+    configPath,
+    config,
+    config.value("material", "CsI"),
+    config.value("detector", json::object()),
+    ReadDetectorMassTons(config),
+    RequiredDouble(config, "exposure_seconds"),
+    beamPulseWidthNs,
+    beamPulseShape,
+    config.at("beam").value("pulse_peak_ns", 0.5 * beamPulseWidthNs),
+    pulseRateHz,
+    1.0e9 / pulseRateHz,
+    config.value("recoil_step_mev", 0.0001),
+    config.value("recoil_min_mev", 0.0),
+    config.value("recoil_max_mev", 0.0),
+    config.value("neutrino_step_mev", 0.0005),
+    config.value("pdg_year", 2024),
+    ReadTimeWindow(config),
+    ReadDiagnosticsConfig(config),
+    ReadOutputPaths(config),
+  };
+}
+
 Normalization ReadNormalization(const json& config)
 {
   const json& settings = config.at("normalization");
@@ -219,6 +337,8 @@ Normalization ReadNormalization(const json& config)
     throw std::runtime_error(
       "baseline_m and pot_per_second must be positive");
   }
+  // Source-yield mode normalizes from stopped pi+ production and 4pi geometry;
+  // the historical reference flux is carried only as audit metadata.
   const double stoppedPiPlusPerPot =
     RequiredDouble(sourceYield, "stopped_piplus_per_pot");
   const double baseFluxCm2Second =
@@ -547,6 +667,157 @@ void WriteCciSamplerHeader(std::ostream& sampler)
           << "time_window_mode,time_acceptance,exposure_seconds\n";
 }
 
+void WriteTruthRateRow(std::ostream& output, const TruthRateRow& row)
+{
+  output << row.material << ',' << row.isotope.name << ',' << row.isotope.z << ','
+         << row.isotope.a << ',' << std::setprecision(12) << row.recoilEnergyMeV << ','
+         << row.recoilBinWidthMeV << ',' << row.component.component << ','
+         << row.component.flavor << ',' << row.component.timeProfile << ','
+         << row.component.decayLifetimeNs << ',' << row.component.beamPulseShape
+         << ',' << row.component.beamPulseWidthNs << ','
+         << row.component.beamPulsePeakNs << ',' << row.component.beamPeriodNs << ','
+         << row.timeWindowStartNs << ',' << row.timeWindowEndNs << ','
+         << row.timeWindowMode << ',' << row.timeAcceptance << ','
+         << row.exposureSeconds << ','
+         << std::scientific
+         << row.dndeEventsPerMeV << ',' << row.expectedEventsBin
+         << std::defaultfloat << '\n';
+}
+
+void WriteSamplerRow(std::ostream& sampler, const SamplerRow& row)
+{
+  sampler << row.targetZ << ',' << row.targetA << ','
+          << std::setprecision(12) << row.recoilEnergyMeV << ','
+          << std::scientific << row.contributionEvents << ','
+          << row.contributionEvents / row.recoilBinWidthMeV << ','
+          << row.contributionEvents << ','
+          << std::defaultfloat << row.recoilBinWidthMeV << ','
+          << row.meanNuEnergyMeV << ','
+          << row.source << ','
+          << row.component.component << ','
+          << row.component.flavor << ','
+          << row.component.timeProfile << ','
+          << row.component.decayLifetimeNs << ','
+          << row.component.beamPulseShape << ','
+          << row.component.beamPulseWidthNs << ','
+          << row.component.beamPulsePeakNs << ','
+          << row.component.beamPeriodNs << ','
+          << row.timeWindowStartNs << ','
+          << row.timeWindowEndNs << ','
+          << row.timeWindowMode << ','
+          << row.timeAcceptance << ','
+          << row.exposureSeconds << '\n';
+}
+
+RateProducts CalculateRateProducts(
+  const RunSettings& settings,
+  const std::vector<SourceComponent>& components,
+  const std::vector<Isotope>& isotopeList,
+  PiDAR& flux,
+  double recoilMaxMeV)
+{
+  RateProducts products;
+  // DukeCEvNS produces unquenched nuclear-recoil truth rates. Detector response
+  // effects are deliberately left for CCI-simulation downstream.
+  for (const auto& isotope : isotopeList) {
+    const auto formFactor =
+      MakeFormFactor(settings.config.value("formfactor", json::object()), isotope.a);
+    // Recoil bins are evaluated at the upper edge of each fixed-width bin.
+    for (double recoil = settings.recoilMinMeV + settings.recoilStepMeV;
+         recoil <= recoilMaxMeV;
+         recoil += settings.recoilStepMeV) {
+      for (const auto& component : components) {
+        const RateBreakdown rateBreakdown = RecoilRateBreakdownPerTonSecondMeV(
+          isotope, *formFactor, flux, component, recoil,
+          settings.neutrinoStepMeV, settings.pdgYear);
+        const double ratePerTonSecondMeV = rateBreakdown.ratePerTonSecondMeV;
+        const double timeAcceptance = TimeAcceptance(component, settings.timeWindow);
+        const double windowScale =
+          settings.timeWindow.mode == "rate_windowed" ? timeAcceptance : 1.0;
+        const double unwindowedDnde =
+          ratePerTonSecondMeV * settings.detectorMassTons * settings.exposureSeconds;
+        const double dnde =
+          ratePerTonSecondMeV * settings.detectorMassTons * settings.exposureSeconds *
+          windowScale;
+        products.ledger.totalUnwindowedExpectedEvents +=
+          unwindowedDnde * settings.recoilStepMeV;
+        const double binEvents = dnde * settings.recoilStepMeV;
+        products.ledger.totalExpectedEvents += binEvents;
+        products.ledger.expectedEventsByComponent[component.component] += binEvents;
+        products.ledger.expectedEventsByIsotope[isotope.name] += binEvents;
+        products.ledger.timeAcceptanceByComponent[component.component] = timeAcceptance;
+        products.recoilEventsByComponent[recoil][component.component] += binEvents;
+
+        for (const auto& contribution : rateBreakdown.nuEnergyContributions) {
+          const double contributionEvents =
+            contribution.ratePerTonSecondMeV * settings.detectorMassTons *
+            settings.exposureSeconds * windowScale * settings.recoilStepMeV;
+          const double nuBinCenter =
+            (std::floor(contribution.nuEnergyMeV / settings.diagnostics.nuEnergyStepMeV)
+             + 0.5) * settings.diagnostics.nuEnergyStepMeV;
+          products.nuRecoilEventsByComponent[recoil][component.component][nuBinCenter] +=
+            contributionEvents;
+        }
+
+        products.truthRows.push_back({
+          settings.material,
+          isotope,
+          component,
+          recoil,
+          settings.recoilStepMeV,
+          settings.timeWindow.startNs,
+          settings.timeWindow.endNs,
+          settings.timeWindow.mode,
+          timeAcceptance,
+          settings.exposureSeconds,
+          dnde,
+          binEvents,
+        });
+
+        std::map<double, std::pair<double, double>> samplerNuBins;
+        for (const auto& contribution : rateBreakdown.nuEnergyContributions) {
+          const double nuBin =
+            std::floor(contribution.nuEnergyMeV / settings.diagnostics.nuEnergyStepMeV);
+          auto& samplerBin = samplerNuBins[nuBin];
+          samplerBin.first += contribution.ratePerTonSecondMeV;
+          samplerBin.second +=
+            contribution.nuEnergyMeV * contribution.ratePerTonSecondMeV;
+        }
+        for (const auto& nuBin : samplerNuBins) {
+          const double contributionRate = nuBin.second.first;
+          if (contributionRate <= 0.0) {
+            continue;
+          }
+          const double contributionEvents =
+            contributionRate * settings.detectorMassTons * settings.exposureSeconds *
+            windowScale * settings.recoilStepMeV;
+          const double meanNuEnergyMeV =
+            component.flavor == "numu"
+              ? kPromptNuMuEnergyMeV
+              : nuBin.second.second / contributionRate;
+          products.samplerRows.push_back({
+            isotope.z,
+            isotope.a,
+            recoil,
+            contributionEvents,
+            settings.recoilStepMeV,
+            meanNuEnergyMeV,
+            isotope.name,
+            component,
+            settings.timeWindow.startNs,
+            settings.timeWindow.endNs,
+            settings.timeWindow.mode,
+            timeAcceptance,
+            settings.exposureSeconds,
+          });
+        }
+      }
+    }
+  }
+
+  return products;
+}
+
 void WriteNuRecoilDiagnostic(
   std::ostream& nuRecoil,
   const NuRecoilEvents& nuRecoilEventsByComponent,
@@ -807,6 +1078,26 @@ json BuildMetadata(
       {"recoil_time_csv", paths.recoilTimeCsv},
       {"nu_recoil_csv", paths.nuRecoilCsv},
     }},
+    {"cci_consumed_outputs", json::array({"sampler_csv", "metadata_json"})},
+    {"output_roles", {
+      {"truth_csv", "audit"},
+      {"sampler_csv", "cci_recoil_sampler"},
+      {"metadata_json", "cci_pseudodata_count_and_audit"},
+      {"recoil_by_component_csv", "diagnostic"},
+      {"time_by_component_csv", "diagnostic"},
+      {"recoil_time_csv", "diagnostic"},
+      {"nu_recoil_csv", "diagnostic"},
+    }},
+    {"unsupported_physics", {
+      {"pi_minus_contributions", "omitted"},
+      {"decay_in_flight_contributions", "omitted"},
+      {"oscillations", "omitted"},
+      {"detector_threshold", "omitted"},
+      {"quenching", "omitted; downstream detector response responsibility"},
+      {"light_yield", "omitted; downstream detector response responsibility"},
+      {"optical_transport", "omitted; downstream detector response responsibility"},
+      {"electronics_response", "omitted; downstream detector response responsibility"},
+    }},
     {"output_units", {
       {"recoil_energy", "MeVnr"},
       {"dnde_events_per_mev", "expected events / MeVnr over configured exposure"},
@@ -825,199 +1116,169 @@ json BuildMetadata(
   };
 }
 
+void PrintSummary(
+  const RunSettings& settings,
+  const Normalization& normalization,
+  const std::vector<SourceComponent>& components,
+  const std::vector<Isotope>& isotopeList,
+  double recoilMaxMeV,
+  double maxNu,
+  const RateLedger& ledger)
+{
+  double configuredFluxCm2Second = 0.0;
+  for (const auto& component : components) {
+    configuredFluxCm2Second +=
+      normalization.baseFluxCm2Second * component.yieldPerStoppedPiPlus;
+  }
+
+  std::cout << "config: " << settings.configPath << '\n';
+  std::cout << "material: " << settings.material << '\n';
+  std::cout << "mass_tons: " << std::setprecision(12)
+            << settings.detectorMassTons << '\n';
+  std::cout << "flux_model: pi_decay_at_rest\n";
+  std::cout << "baseline_m: " << normalization.baselineM << '\n';
+  std::cout << "base_flux_cm2_s_per_component: "
+            << normalization.baseFluxCm2Second << '\n';
+  std::cout << "total_configured_flux_cm2_s: "
+            << configuredFluxCm2Second << '\n';
+  std::cout << "recoil_range_mev: " << settings.recoilMinMeV << " to "
+            << recoilMaxMeV << " step " << settings.recoilStepMeV << '\n';
+  std::cout << "neutrino_step_mev: " << settings.neutrinoStepMeV << '\n';
+  std::cout << "max_neutrino_energy_mev: " << maxNu << '\n';
+  std::cout << "time_window: " << settings.timeWindow.startNs << " to "
+            << settings.timeWindow.endNs << " ns, mode "
+            << settings.timeWindow.mode << '\n';
+  std::cout << "source_components:\n";
+  for (const auto& component : components) {
+    std::cout << "  " << component.component
+              << " flavor=" << component.flavor
+              << " flux_cm2_s="
+              << normalization.baseFluxCm2Second * component.yieldPerStoppedPiPlus
+              << " time_acceptance="
+              << ledger.timeAcceptanceByComponent.at(component.component)
+              << " expected_events="
+              << ledger.expectedEventsByComponent.at(component.component)
+              << '\n';
+  }
+  std::cout << "targets:\n";
+  for (const auto& isotope : isotopeList) {
+    std::cout << "  " << isotope.name
+              << " z=" << isotope.z
+              << " a=" << isotope.a
+              << " mass_fraction=" << isotope.massFraction
+              << " expected_events="
+              << ledger.expectedEventsByIsotope.at(isotope.name)
+              << '\n';
+  }
+  std::cout << "total_expected_events: " << ledger.totalExpectedEvents << '\n';
+  std::cout << "cci_consumed_outputs: sampler_csv, metadata_json\n";
+  std::cout << "diagnostic_outputs: truth_csv, recoil_by_component_csv, "
+            << "time_by_component_csv, recoil_time_csv, nu_recoil_csv\n";
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
 {
   if (argc < 2) {
-    std::cerr << "Usage: ./ccm_truth_rates [jsonfile-or-name]\n";
+    std::cerr << "Usage: ./ccm_truth_rates [--summary|--dry-run] [jsonfile-or-name]\n";
     return 2;
   }
 
   try {
-    const std::string configPath = ConfigPath(argv[1]);
-    const json config = ReadJson(configPath);
-
-    const std::string material = config.value("material", "CsI");
-    const json detectorConfig = config.value("detector", json::object());
-    const double detectorMassTons = ReadDetectorMassTons(config);
-    const double exposureSeconds = RequiredDouble(config, "exposure_seconds");
-    const double beamPulseWidthNs = RequiredDouble(config.at("beam"), "pulse_width_ns");
-    const std::string beamPulseShape =
-      config.at("beam").value("pulse_shape", "uniform");
-    const double beamPulsePeakNs =
-      config.at("beam").value("pulse_peak_ns", 0.5 * beamPulseWidthNs);
-    const double pulseRateHz = RequiredDouble(config.at("beam"), "pulse_rate_hz");
-    const double beamPeriodNs = 1.0e9 / pulseRateHz;
-    const double recoilStepMeV = config.value("recoil_step_mev", 0.0001);
-    const double recoilMinMeV = config.value("recoil_min_mev", 0.0);
-    const double recoilMaxOverrideMeV = config.value("recoil_max_mev", 0.0);
-    const double neutrinoStepMeV = config.value("neutrino_step_mev", 0.0005);
-    const int pdgYear = config.value("pdg_year", 2024);
-    const TimeWindow timeWindow = ReadTimeWindow(config);
-    const json diagnostics = config.value("diagnostics", json::object());
-    const double timeMinNs = diagnostics.value("time_min_ns", 0.0);
-    const double timeMaxNs = diagnostics.value("time_max_ns", 10000.0);
-    const double timeStepNs = diagnostics.value("time_step_ns", 100.0);
-    const double nuDiagnosticStepMeV =
-      diagnostics.value("nu_energy_step_mev", 0.25);
-    if (timeMaxNs <= timeMinNs || timeStepNs <= 0.0) {
-      throw std::runtime_error(
-        "diagnostics requires time_max_ns > time_min_ns and time_step_ns > 0");
+    bool summaryOnly = false;
+    std::string configName;
+    for (int i = 1; i < argc; ++i) {
+      const std::string arg = argv[i];
+      if (arg == "--summary" || arg == "--dry-run") {
+        summaryOnly = true;
+        continue;
+      }
+      if (arg == "--help" || arg == "-h") {
+        std::cout << "Usage: ./ccm_truth_rates [--summary|--dry-run] [jsonfile-or-name]\n";
+        return 0;
+      }
+      if (!configName.empty()) {
+        throw std::runtime_error("expected only one jsonfile-or-name argument");
+      }
+      configName = arg;
     }
-    if (nuDiagnosticStepMeV <= 0.0) {
-      throw std::runtime_error("diagnostics.nu_energy_step_mev must be > 0");
+    if (configName.empty()) {
+      throw std::runtime_error("missing jsonfile-or-name argument");
     }
 
+    const RunSettings settings = ReadRunSettings(ConfigPath(configName));
     const std::vector<SourceComponent> components =
-      ReadSourceComponents(config.at("flux"), beamPulseWidthNs, beamPulseShape,
-        beamPulsePeakNs, beamPeriodNs);
-    const Normalization normalization = ReadNormalization(config);
+      ReadSourceComponents(settings.config.at("flux"), settings.beamPulseWidthNs,
+        settings.beamPulseShape, settings.beamPulsePeakNs, settings.beamPeriodNs);
+    const Normalization normalization = ReadNormalization(settings.config);
 
     PiDAR flux;
     flux.SetNorm(normalization.baseFluxCm2Second);
     const double maxNu = flux.maxEnu();
-    const std::vector<Isotope> isotopeList = BuildIsotopes(material);
+    const std::vector<Isotope> isotopeList = BuildIsotopes(settings.material);
 
     double minMass = isotopeList.front().massMeV;
     for (const auto& isotope : isotopeList) {
       minMass = std::min(minMass, isotope.massMeV);
     }
     const double recoilMaxMeV =
-      recoilMaxOverrideMeV > recoilMinMeV
-        ? recoilMaxOverrideMeV
+      settings.recoilMaxOverrideMeV > settings.recoilMinMeV
+        ? settings.recoilMaxOverrideMeV
         : MaximumRecoilMeV(maxNu, minMass);
 
-    const OutputPaths paths = ReadOutputPaths(config);
-    OutputFiles files = OpenOutputFiles(paths);
+    const RateProducts products =
+      CalculateRateProducts(settings, components, isotopeList, flux, recoilMaxMeV);
+
+    if (summaryOnly) {
+      PrintSummary(settings, normalization, components, isotopeList, recoilMaxMeV,
+        maxNu, products.ledger);
+      return 0;
+    }
+
+    OutputFiles files = OpenOutputFiles(settings.paths);
     WriteTruthRateHeader(files.truthRateAudit);
     WriteCciSamplerHeader(files.cciSampler);
 
-    RateLedger ledger;
-    RecoilComponentEvents recoilEventsByComponent;
-    NuRecoilEvents nuRecoilEventsByComponent;
-    for (const auto& isotope : isotopeList) {
-      const auto formFactor =
-        MakeFormFactor(config.value("formfactor", json::object()), isotope.a);
-      for (double recoil = recoilMinMeV + recoilStepMeV; recoil <= recoilMaxMeV;
-           recoil += recoilStepMeV) {
-        for (const auto& component : components) {
-          const RateBreakdown rateBreakdown = RecoilRateBreakdownPerTonSecondMeV(
-            isotope, *formFactor, flux, component, recoil, neutrinoStepMeV, pdgYear);
-          const double ratePerTonSecondMeV = rateBreakdown.ratePerTonSecondMeV;
-          const double timeAcceptance = TimeAcceptance(component, timeWindow);
-          const double windowScale =
-            timeWindow.mode == "rate_windowed" ? timeAcceptance : 1.0;
-          const double unwindowedDnde =
-            ratePerTonSecondMeV * detectorMassTons * exposureSeconds;
-          const double dnde =
-            ratePerTonSecondMeV * detectorMassTons * exposureSeconds *
-            windowScale;
-          ledger.totalUnwindowedExpectedEvents += unwindowedDnde * recoilStepMeV;
-          const double binEvents = dnde * recoilStepMeV;
-          ledger.totalExpectedEvents += binEvents;
-          ledger.expectedEventsByComponent[component.component] += binEvents;
-          ledger.expectedEventsByIsotope[isotope.name] += binEvents;
-          ledger.timeAcceptanceByComponent[component.component] = timeAcceptance;
-          recoilEventsByComponent[recoil][component.component] += binEvents;
-
-          for (const auto& contribution : rateBreakdown.nuEnergyContributions) {
-            const double contributionEvents =
-              contribution.ratePerTonSecondMeV * detectorMassTons *
-              exposureSeconds * windowScale * recoilStepMeV;
-            const double nuBinCenter =
-              (std::floor(contribution.nuEnergyMeV / nuDiagnosticStepMeV) + 0.5) *
-              nuDiagnosticStepMeV;
-            nuRecoilEventsByComponent[recoil][component.component][nuBinCenter] +=
-              contributionEvents;
-          }
-
-          files.truthRateAudit
-            << material << ',' << isotope.name << ',' << isotope.z << ','
-            << isotope.a << ',' << std::setprecision(12) << recoil << ','
-            << recoilStepMeV << ',' << component.component << ','
-            << component.flavor << ',' << component.timeProfile << ','
-            << component.decayLifetimeNs << ',' << component.beamPulseShape
-            << ',' << component.beamPulseWidthNs << ','
-            << component.beamPulsePeakNs << ',' << component.beamPeriodNs << ','
-            << timeWindow.startNs << ',' << timeWindow.endNs << ','
-            << timeWindow.mode << ',' << timeAcceptance << ','
-            << exposureSeconds << ','
-            << std::scientific
-            << dnde << ',' << binEvents << std::defaultfloat << '\n';
-
-          std::map<double, std::pair<double, double>> samplerNuBins;
-          for (const auto& contribution : rateBreakdown.nuEnergyContributions) {
-            const double nuBin =
-              std::floor(contribution.nuEnergyMeV / nuDiagnosticStepMeV);
-            auto& samplerBin = samplerNuBins[nuBin];
-            samplerBin.first += contribution.ratePerTonSecondMeV;
-            samplerBin.second +=
-              contribution.nuEnergyMeV * contribution.ratePerTonSecondMeV;
-          }
-          for (const auto& nuBin : samplerNuBins) {
-            const double contributionRate = nuBin.second.first;
-            if (contributionRate <= 0.0) {
-              continue;
-            }
-            const double contributionEvents =
-              contributionRate * detectorMassTons * exposureSeconds *
-              windowScale * recoilStepMeV;
-            const double meanNuEnergyMeV =
-              component.flavor == "numu"
-                ? kPromptNuMuEnergyMeV
-                : nuBin.second.second / contributionRate;
-            files.cciSampler << isotope.z << ',' << isotope.a << ','
-                              << std::setprecision(12) << recoil << ','
-                              << std::scientific << contributionEvents << ','
-                              << contributionEvents / recoilStepMeV << ','
-                              << contributionEvents << ','
-                              << std::defaultfloat << recoilStepMeV << ','
-                              << meanNuEnergyMeV << ','
-                              << isotope.name << ','
-                              << component.component << ','
-                              << component.flavor << ','
-                              << component.timeProfile << ','
-                              << component.decayLifetimeNs << ','
-                              << component.beamPulseShape << ','
-                              << component.beamPulseWidthNs << ','
-                              << component.beamPulsePeakNs << ','
-                              << component.beamPeriodNs << ','
-                              << timeWindow.startNs << ','
-                              << timeWindow.endNs << ','
-                              << timeWindow.mode << ','
-                              << timeAcceptance << ','
-                              << exposureSeconds << '\n';
-          }
-        }
-      }
+    // The sampler CSV and metadata JSON are the CCI-facing products. The other
+    // CSVs are audit/diagnostic projections kept for rate validation.
+    for (const auto& row : products.truthRows) {
+      WriteTruthRateRow(files.truthRateAudit, row);
+    }
+    for (const auto& row : products.samplerRows) {
+      WriteSamplerRow(files.cciSampler, row);
     }
 
-    WriteNuRecoilDiagnostic(files.nuRecoilDiagnostic, nuRecoilEventsByComponent,
-      components, recoilStepMeV, nuDiagnosticStepMeV);
+    WriteNuRecoilDiagnostic(files.nuRecoilDiagnostic,
+      products.nuRecoilEventsByComponent, components, settings.recoilStepMeV,
+      settings.diagnostics.nuEnergyStepMeV);
     WriteRecoilByComponentDiagnostic(files.recoilByComponentDiagnostic,
-      recoilEventsByComponent, components, recoilStepMeV);
+      products.recoilEventsByComponent, components, settings.recoilStepMeV);
     WriteTimeDiagnostics(files.timeByComponentDiagnostic,
-      files.recoilTimeDiagnostic, ledger, recoilEventsByComponent, components,
-      recoilStepMeV, timeMinNs, timeMaxNs, timeStepNs);
+      files.recoilTimeDiagnostic, products.ledger, products.recoilEventsByComponent,
+      components, settings.recoilStepMeV, settings.diagnostics.timeMinNs,
+      settings.diagnostics.timeMaxNs, settings.diagnostics.timeStepNs);
 
-    const json meta = BuildMetadata(config, configPath, material, detectorConfig,
-      paths, normalization, ledger, isotopeList, components, detectorMassTons,
-      exposureSeconds, beamPulseShape, beamPulseWidthNs, beamPulsePeakNs,
-      pulseRateHz, beamPeriodNs, recoilMinMeV, recoilMaxMeV, recoilStepMeV,
-      neutrinoStepMeV, maxNu, pdgYear, timeWindow, timeMinNs, timeMaxNs,
-      timeStepNs, nuDiagnosticStepMeV);
+    const json meta = BuildMetadata(settings.config, settings.configPath,
+      settings.material, settings.detectorConfig, settings.paths, normalization,
+      products.ledger, isotopeList, components, settings.detectorMassTons,
+      settings.exposureSeconds, settings.beamPulseShape, settings.beamPulseWidthNs,
+      settings.beamPulsePeakNs, settings.pulseRateHz, settings.beamPeriodNs,
+      settings.recoilMinMeV, recoilMaxMeV, settings.recoilStepMeV,
+      settings.neutrinoStepMeV, maxNu, settings.pdgYear, settings.timeWindow,
+      settings.diagnostics.timeMinNs, settings.diagnostics.timeMaxNs,
+      settings.diagnostics.timeStepNs, settings.diagnostics.nuEnergyStepMeV);
     files.metadata << std::setw(2) << meta << '\n';
 
-    std::cout << "Wrote " << paths.truthCsv << '\n';
-    std::cout << "Wrote " << paths.samplerCsv << '\n';
-    std::cout << "Wrote " << paths.metadataJson << '\n';
-    std::cout << "Wrote " << paths.recoilByComponentCsv << '\n';
-    std::cout << "Wrote " << paths.timeByComponentCsv << '\n';
-    std::cout << "Wrote " << paths.recoilTimeCsv << '\n';
-    std::cout << "Wrote " << paths.nuRecoilCsv << '\n';
+    std::cout << "Wrote " << settings.paths.truthCsv << '\n';
+    std::cout << "Wrote " << settings.paths.samplerCsv << '\n';
+    std::cout << "Wrote " << settings.paths.metadataJson << '\n';
+    std::cout << "Wrote " << settings.paths.recoilByComponentCsv << '\n';
+    std::cout << "Wrote " << settings.paths.timeByComponentCsv << '\n';
+    std::cout << "Wrote " << settings.paths.recoilTimeCsv << '\n';
+    std::cout << "Wrote " << settings.paths.nuRecoilCsv << '\n';
     std::cout << "Total expected events: " << std::setprecision(8)
-              << ledger.totalExpectedEvents << '\n';
+              << products.ledger.totalExpectedEvents << '\n';
   } catch (const std::exception& error) {
     std::cerr << "ccm_truth_rates: " << error.what() << '\n';
     return 1;

@@ -19,8 +19,8 @@
   ],
   "material": "CsI",
   "detector": {
-    "crystal_count": 16,
-    "crystal_mass_kg": 4.0,
+    "crystal_count": 25,
+    "density_g_cm3": 4.51,
     "crystal_dimensions_in": [2.0, 2.0, 12.0]
   },
   "exposure_seconds": 94608000.0,
